@@ -1,1 +1,1 @@
-web: luvit .
+worker: luvit Instance.lua
