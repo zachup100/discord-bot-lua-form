@@ -1,7 +1,7 @@
 local discordia, json, fs, coroutine, timer = require("discordia"), require("json"), require("fs"), require("coroutine"), require("timer")
 local Bot, Enum = discordia.Client(), discordia.enums
 local Guilds = {Default={Prefix="!", Party={Template="{USERNAME}'s Party", Category="0", Lobby="0"}}}
-local TOKEN = "Nzg3ODY3MjgyNjQxNTE4NjIz.X9bMlg.sRcMI6dklVlKUCAUv6eD2xIm2RY"
+local TOKEN = process.env.TOKEN
 function GetGuildInfo(Id) return Guilds[Id] or Guilds.Default end
 
 local Parties = {}
