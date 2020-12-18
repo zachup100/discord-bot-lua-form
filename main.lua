@@ -109,7 +109,7 @@ function VoiceCommand(Member, Message, Args)
     return
   elseif Args[1] == "template" then
     table.remove(Args, 1)
-    local Title = table.concat(Args)
+    local Title = table.concat(Args, " ")
     if string.len(Title) == 0 then Message:reply(string.format("%s Your template string cannot be empty!", Message.author.mentionString)) return end
     Guilds[Member.guild.id].Party.Template = Title
     Message:reply(string.format("%s You changed the template to '%s'", Message.author.mentionString, string.gsub(Title, "{USERNAME}", Member.name)))
