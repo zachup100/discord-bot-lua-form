@@ -1,12 +1,42 @@
-local discordia, json, fs = require("discordia"), require("json"), require("fs")
-local client = discordia.Client()
-local guilds = {}
+local discordia, json, fs, coroutine, timer = require("discordia"), require("json"), require("fs"), require("coroutine"), require("timer")
+local Bot, Enum = discordia.Client(), discordia.enums
+local Guilds = {Default={Prefix="!", Party={Template="{USERNAME}'s Party", Category="0", Lobby="0"}}}
+local TOKEN = "Nzg3ODY3MjgyNjQxNTE4NjIz.X9bMlg.sRcMI6dklVlKUCAUv6eD2xIm2RY"
+function GetGuildInfo(Id) return Guilds[Id] or Guilds.Default end
 
-local defaultGuild = {prefix="!", party={category="0", lobby="0"}}
-local parties = {} --// {owner=""}
-local users = {} --// {voice="", guild=""}
+local Parties = {}
+local Members = {}
 
---// string.split isn't a global function?
+function Parties.get(Id) return Parties[Id] end
+function Parties.new(Member, Category, Title)
+  local Channel = Category:createVoiceChannel(Title)
+
+  local self = {}
+  self.Owner = Member.id
+  self.Access = {}
+  self.Title = Title
+  self.Id = Channel.id
+
+  function self:GetChannel() return Channel end
+  function self:Remove()
+    local Id = self.Id
+    for Index, Value in pairs(self) do self[Index] = nil end
+    Parties[Id] = nil
+  end
+
+  Parties[Channel.id] = self
+  return self
+end
+
+function Members.get(Id) return Members[Id] end
+function Members.new(Member)
+  local self = {}
+  self.Channel = ""
+
+  Members[Member.id] = self
+  return self
+end
+
 local function split(input, sep)
   if not sep then sep = "%s" end
   local rtn = {}
@@ -14,18 +44,12 @@ local function split(input, sep)
   return rtn
 end
 
-local function combine(tbl)
-  local rtn = ""
-  for _,str in pairs(tbl) do rtn = rtn.." "..str end
-  return rtn
+local function ShutdownBot()
+  timer.clearTimer(SaveTimer)
+  SaveFile("./guilds.json", Guilds)
+  Bot:stop()
 end
 
-function Shutdown()
-  SaveFile("./guilds.json", (guilds or {}))
-  client:stop()
-end
-
---// Easier way to load file without CopyPasta
 function LoadFile(Path)
   local Output, Result = fs.existsSync(Path)
   if Output then
@@ -36,18 +60,15 @@ function LoadFile(Path)
         if Result then
           return true, Result
         else
-          --print(string.format("[WARNING] Failed to parse json file: '%s'", Result))
           return false, Result
         end
       else
         return true, Output
       end
     else
-      --print(string.format("[WARNING] Failed to read file: '%s' -- '%s'", Path, Result))
       return false, Result
     end
   else
-    --print(string.format("[WARNING] Failed to locate file: '%s' -- '%s'", Path, Result))
     return false, Result
   end
 end
@@ -59,105 +80,147 @@ function SaveFile(Path, Data)
 end
 
 local Success, Result = LoadFile('./guilds.json')
-if Success then guilds = Result else print(string.format("[WARNING] Failed to load file: 'guilds.json' -- '%s'", Result)) end
+if Success then Guilds = Result else print(string.format("[WARNING] Failed to load file: 'guilds.json' -- '%s'", Result)) end
 
 --// Command Functions
-function VoiceCommand(message, args)
-  if args[1] == "setup" then
-    local info = (type(guilds[message.guild._id].party)=="table" and guilds[message.guild._id].party) or {} --// {prefix="!", party={category="", lobby=""}}
-    local category = message.guild:getChannel(info.category)
-    if not category then
-      category = message.guild:createCategory("Test Category")
-      category:moveUp(20)
-      if type(guilds[message.guild._id].party) ~= "table" then guilds[message.guild._id].party = {} end
-      guilds[message.guild._id].party.category = category.id
-      SaveFile("./guilds.json", (guilds or {}))
+function VoiceCommand(Member, Message, Args)
+  if #Args == 0 then
+    Message:reply(string.format("%s Subcommands: setup, template, name", Message.author.mentionString))
+    return
+  end
+  if string.lower(Args[1]) == "setup" then
+    local HasChannelPerms = (Member:hasPermission(nil, Enum.permission.manageChannels) or Member:hasPermission(nil, Enum.permission.administrator))
+    if not HasChannelPerms then
+      Message:reply(string.format("%s You do not have the proper permissions to use that command.", Message.author.mentionString))
+      return
     end
-    local voice = message.guild:getChannel(info.lobby)
-    if not voice then
-      voice = category:createVoiceChannel("Create a new voice party!")
-      if type(guilds[message.guild._id].party) ~= "table" then guilds[message.guild._id].party = {} end
-      guilds[message.guild._id].party.lobby = voice.id
-      SaveFile("./guilds.json", (guilds or {}))
+    local Info = GetGuildInfo(Message.guild.id)
+    if Message.guild:getChannel(Info.Party.Category) or Message.guild:getChannel(Info.Party.Lobby) then
+      Message:reply(string.format("%s Category or Voice Channel still exists. Delete them to restart the setup.", Message.author.mentionString))
+      return
     end
+    local Category = Message.guild:createCategory("Parties")
+    Guilds[Member.guild.id].Party.Category = Category.id
+    Category:moveUp(20)
+    local Voice = Category:createVoiceChannel("Create a new voice party!")
+    Guilds[Member.guild.id].Party.Lobby = Voice.id
+    SaveFile("./guilds.json", Guilds)
+    Message:reply(string.format("%s Setup complete, look for the category called \"Parties\"", Message.author.mentionString))
+    return
+  elseif Args[1] == "template" then
+    table.remove(Args, 1)
+    local Title = table.concat(Args)
+    if string.len(Title) == 0 then Message:reply(string.format("%s Your template string cannot be empty!", Message.author.mentionString)) return end
+    Guilds[Member.guild.id].Party.Template = Title
+    Message:reply(string.format("%s You changed the template to '%s'", Message.author.mentionString, string.gsub(Title, "{USERNAME}", Member.name)))
+    return
+  elseif (Args[1] == "name" or Args[1] == "rename" or Args[1] == "title") then
+    table.remove(Args, 1)
+    local Title = table.concat(Args)
+    local _Member = Members.get(Member.id)
+    if not _Member then
+      Message:reply(string.format("%s You do not own a voice channel!", Message.author.mentionString))
+      return
+    end
+    local Party = Parties.get(_Member.Channel)
+    if not Party then
+      Message:reply(string.format("%s You do not own a voice channel!", Message.author.mentionString))
+      return
+    end
+    local Channel = Member.guild:getChannel(_Member.Channel)
+    if not Channel then
+      Message:reply(string.format("%s Error: Unknown Channel", Message.author.mentionString))
+      return
+    end
+    Channel:setName(Title)
+    Message:reply(string.format("Your channel was renamed to '%s'", Title))
   end
 end
 
-function TestCommand(message, args)
-  print(message.author.mentionString) --// -> <@180885949926998026>
-  print(message.author.id)
-  message:reply(message.author.mentionString.." You ran a test command!")
-end
-
---// Listen for Commands
---// Get Guild Id -> message.guild._id
---// Get Bot Client Id -> client.user.id
-function MessageCreated(message)
-	if message.author.bot then return end
-  if message.type ~= 0 then return end
-	local content = message.content:gsub("[\n\r]", "")
-  local info = ((type(guilds[message.guild._id])=="table" and guilds[message.guild._id]) or defaultGuild)
-  if not guilds[message.guild._id] then guilds[message.guild._id] = info end
-  local args = split(content, " ")
-  local From, End = string.find((args[1] or ""), string.format("<@!%s>", client.user.id))
-  local Mentioned, UsedPrefix = (From==1), (string.sub((args[1] or ""), 1, string.len(info.prefix)) == info.prefix)
-  if Mentioned then args[1] = string.sub(args[1], End+1) end --// Adjust arguments for Mentioned command
-  if string.len(args[1]) == 0 then table.remove(args, 1) end --// Removes if first argument is just a mention
-
+function MessageCreated(Message)
+  if Message.author.bot then return end
+  if Message.type ~= 0 then return end
+  local Content = Message.content:gsub("[\n\r]", "")
+  local Guild = GetGuildInfo(Message.guild.id)
+  if not Guilds[Message.guild.id] then Guilds[Message.guild.id] = Guild end
+  local Args = split(Content, " ")
+  local From, End = string.find((Args[1] or ""), string.format("<@!%s>", Bot.user.id))
+  local Mentioned, UsedPrefix = (From==1), (string.sub((Args[1] or ""), 1, string.len(Guild.Prefix)) == Guild.Prefix)
+  if Mentioned then Args[1] = string.sub(Args[1], End+1) end
+  if string.len(Args[1]) == 0 then table.remove(Args, 1) end
   if Mentioned or UsedPrefix then
     if UsedPrefix then
-      args[1] = string.sub(args[1], string.len(info.prefix)+1)
-      if string.len(args[1]) == 0 then return end --// If they message only contains the prefix
+      Args[1] = string.sub(Args[1], string.len(Guild.Prefix)+1)
+      if string.len(Args[1]) == 0 then return end
     end
+    local Member = Message.guild:getMember(Message.author.id)
+    Command = string.lower(Args[1])
+    if string.len(Command) == 0 then return end
+    table.remove(Args, 1)
 
-    for i=1,#args do args[i] = string.lower(args[i]) end
-    command = args[1]
-    table.remove(args, 1)
-    if string.len(command) == 0 then return end
-
-    if command == "test" then
-      TestCommand(message, args)
-    elseif command == "voice" then
-      VoiceCommand(message, args)
-    elseif (command == "shutdown" and message.author.id == "180885949926998026") then
-      Shutdown()
-    else
-      message:reply(message.author.mentionString.." Unknown Command!")
-    end
-  end
-end
-
-function MemberJoinedVoice(member, channel)
-  local info = ((type(guilds[member.guild._id])=="table" and guilds[member.guild._id]) or defaultGuild)
-  local category = channel.guild:getChannel(info.party.category)
-  if not category then return end --// Guild didn't run 'voice setup'
-  if type(users[member.id]) ~= "table" then users[member.id] = {voice=""} end
-  if channel.id == info.party.lobby then
-    local voice = channel.guild:getChannel(users[member.id].voice)
-    if voice then
-      member:setVoiceChannel(voice)
-    else
-      local voice = category:createVoiceChannel(member.name.."'s party")
-      parties[voice.id] = {owner=member.id}
-      users[member.id] = {voice=voice.id}
-      member:setVoiceChannel(voice)
+    if (Command == "voice") then
+      VoiceCommand(Member, Message, Args)
+    elseif (Command == "reset" and Message.author.id == "180885949926998026") then
+      Guilds[Message.guild.id] = Guilds.Default
+      Message:reply(string.format("%s Unknown Command", Message.author.mentionString))
+      return
+    elseif (Command == "shutdown" and Message.author.id == "180885949926998026") then
+      ShutdownBot()
     end
   end
 end
 
-function MemberLeftVoice(member, channel)
-  if parties[channel.id] then
-    if #channel.connectedMembers == 0 then
-      users[parties[channel.id].owner].voice = nil
-      parties[channel.id] = nil
-      channel:delete()
+function MessageCreatedSafe(Message)
+  local Success, Result = pcall(MessageCreated, Message)
+  if not Success then print("[MessageCreated]:",Result) end
+end
+
+function MemberJoinedVoice(Member, Channel)
+  local Guild = GetGuildInfo(Member.guild.id)
+  if Channel.id ~= Guild.Party.Lobby then return end
+  local Party = Parties.get(Channel.id)
+  if not Party then
+    local Category = Member.guild:getChannel(Guild.Party.Category)
+    if Category then
+      Party = Parties.new(Member, Category, string.gsub(Guild.Party.Template, "{USERNAME}", Member.name))
+      local VoiceId = Party:GetChannel().id
+      local _Member = Members.get(Member)
+      if not _Member then _Member = Members.new(Member) end
+      _Member.Channel = VoiceId
+      Member:setVoiceChannel(VoiceId)
     end
   end
 end
 
---// Discordia Listeners
-print("Starting Client")
-client:on('messageCreate', MessageCreated)
-client:on('voiceChannelJoin', MemberJoinedVoice)
-client:on('voiceChannelLeave', MemberLeftVoice)
-client:run(string.format('Bot %s', process.env.TOKEN))
+function MemberJoinedVoiceSafe(Member, Channel)
+  local Success, Result = pcall(MemberJoinedVoice, Member, Channel)
+  if not Success then print("[MemberJoinedVoice]:",Result) end
+end
+
+function MemberLeftVoice(Member, Channel)
+  local Party = Parties.get(Channel.id)
+  if Party then
+    if #Channel.connectedMembers == 0 then
+      local Owner = Members.get(Party.Owner)
+      if Owner then Owner.Channel = "0" end
+      Party:Remove()
+      Channel:delete()
+    end
+  end
+end
+
+function MemberLeftVoiceSafe(Member, Channel)
+  local Success, Result = pcall(MemberLeftVoice, Member, Channel)
+  if not Success then print("[MemberLeftVoice]:",Result) end
+end
+
+function AutoSave()
+  print("Auto-saving 'guilds.json'")
+  SaveFile("./guilds.json", Guilds)
+end
+
+SaveTimer = timer.setInterval(120000, AutoSave)
+Bot:on('messageCreate', MessageCreatedSafe)
+Bot:on('voiceChannelJoin', MemberJoinedVoiceSafe)
+Bot:on('voiceChannelLeave', MemberLeftVoiceSafe)
+Bot:run(string.format("Bot %s", TOKEN))
