@@ -17,7 +17,7 @@ function Parties.new(Member, Category, Title)
   self.Title = Title
   self.Id = Channel.id
 
-  function self:GetChannel() return Channel end
+  function self:GetChannel() return self.Id end
   function self:Remove()
     local Id = self.Id
     for Index, Value in pairs(self) do self[Index] = nil end
@@ -32,6 +32,11 @@ function Members.get(Id) return Members[Id] end
 function Members.new(Member)
   local self = {}
   self.Channel = ""
+
+  function self:SetChannel(Id)
+    self.Channel = Id
+    return self
+  end
 
   Members[Member.id] = self
   return self
@@ -85,7 +90,7 @@ if Success then Guilds = Result else print(string.format("[WARNING] Failed to lo
 --// Command Functions
 function VoiceCommand(Member, Message, Args)
   if #Args == 0 then
-    Message:reply(string.format("%s Subcommands: setup, template, name", Message.author.mentionString))
+    Message:reply(string.format("%s Subcommands: setup, template, name, claim, lock, unlock, permit, revoke", Message.author.mentionString))
     return
   end
   if string.lower(Args[1]) == "setup" then
@@ -116,7 +121,7 @@ function VoiceCommand(Member, Message, Args)
     return
   elseif (Args[1] == "name" or Args[1] == "rename" or Args[1] == "title") then
     table.remove(Args, 1)
-    local Title = table.concat(Args)
+    local Title = table.concat(Args, " ")
     local _Member = Members.get(Member.id)
     if not _Member then
       Message:reply(string.format("%s You do not own a voice channel!", Message.author.mentionString))
@@ -134,6 +139,21 @@ function VoiceCommand(Member, Message, Args)
     end
     Channel:setName(Title)
     Message:reply(string.format("Your channel was renamed to '%s'", Title))
+  elseif Args[1] == "claim" then
+    Message:reply("This sub-command is unfinished")
+    return
+  elseif Args[1] == "lock" then
+    Message:reply("This sub-command is unfinished")
+    return
+  elseif Args[1] == "unlock" then
+    Message:reply("This sub-command is unfinished")
+    return
+  elseif (Args[1] == "permit" or Args[1] == "allow") then
+    Message:reply("This sub-command is unfinished")
+    return
+  elseif (Args[1] == "revoke" or Args[1] == "remove") then
+    Message:reply("This sub-command is unfinished")
+    return
   end
 end
 
@@ -160,6 +180,19 @@ function MessageCreated(Message)
 
     if (Command == "voice") then
       VoiceCommand(Member, Message, Args)
+    elseif (Command == "test") then
+      print("_Member")
+      local _Member = Members.get(Message.author.id)
+      print(_Member)
+      print(_Member.Channel)
+      print(" ")
+      print("Party")
+      local Party = Parties.get(_Member.Channel)
+      print(Party)
+      print(Party:GetChannel().Id)
+      print(Party.Owner)
+      print(Party.Title)
+      print(" ")
     elseif (Command == "reset" and Message.author.id == "180885949926998026") then
       if string.lower(Args[1]) == "all" then
         local defaultFile = {Default=Guilds.Default}
@@ -184,15 +217,15 @@ end
 function MemberJoinedVoice(Member, Channel)
   local Guild = GetGuildInfo(Member.guild.id)
   if Channel.id ~= Guild.Party.Lobby then return end
-  local Party = Parties.get(Channel.id)
+  local _Member = Members.get(Member.id)
+  if not _Member then _Member = Members.new(Member) end
+  local Party = Parties.get(_Member.Channel)
   if not Party then
     local Category = Member.guild:getChannel(Guild.Party.Category)
     if Category then
       Party = Parties.new(Member, Category, string.gsub(Guild.Party.Template, "{USERNAME}", Member.name))
-      local VoiceId = Party:GetChannel().id
-      local _Member = Members.get(Member)
-      if not _Member then _Member = Members.new(Member) end
-      _Member.Channel = VoiceId
+      local VoiceId = Party:GetChannel()
+      _Member:SetChannel(VoiceId)
       Member:setVoiceChannel(VoiceId)
     end
   end
@@ -208,7 +241,7 @@ function MemberLeftVoice(Member, Channel)
   if Party then
     if #Channel.connectedMembers == 0 then
       local Owner = Members.get(Party.Owner)
-      if Owner then Owner.Channel = "0" end
+      if Owner then Owner.Channel = "" end
       Party:Remove()
       Channel:delete()
     end
