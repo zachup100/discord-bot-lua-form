@@ -161,8 +161,14 @@ function MessageCreated(Message)
     if (Command == "voice") then
       VoiceCommand(Member, Message, Args)
     elseif (Command == "reset" and Message.author.id == "180885949926998026") then
-      Guilds[Message.guild.id] = Guilds.Default
-      Message:reply(string.format("%s Unknown Command", Message.author.mentionString))
+      if string.lower(Args[1]) == "all" then
+        local defaultFile = {Default=Guilds.Default}
+        SaveFile("./guilds.json", defaultFile)
+        Message:reply(string.format("%s You reset the 'guilds.json' file.", Message.author.mentionString))
+      else
+        Guilds[Message.guild.id] = Guilds.Default
+        Message:reply(string.format("%s You reset the settings for this server.", Message.author.mentionString))
+      end
       return
     elseif (Command == "shutdown" and Message.author.id == "180885949926998026") then
       ShutdownBot()
