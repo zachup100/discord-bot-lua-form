@@ -357,18 +357,6 @@ function MessageCreated(Message)
     if (Command == "voice") then
       VoiceCommand(Member, Message, Args)
     elseif (Command == "test") then
-      print("_Member")
-      local _Member = Members.get(Message.author.id)
-      print(_Member)
-      print(_Member.Channel)
-      print(" ")
-      print("Party")
-      local Party = Parties.get(_Member.Channel)
-      print(Party)
-      print(Party:GetChannel().Id)
-      print(Party.Owner)
-      print(Party.Title)
-      print(" ")
       Message:reply(string.format("%s Shard instance '%s'", Message.author.mentionString),Member.guild.shardId)
     elseif (Command == "reset" and Message.author.id == "180885949926998026") then
       if string.lower(Args[1]) == "all" then
