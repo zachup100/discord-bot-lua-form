@@ -357,7 +357,7 @@ function MessageCreated(Message)
     if (Command == "voice") then
       VoiceCommand(Member, Message, Args)
     elseif (Command == "test") then
-      Message:reply(string.format("%s Shard instance '%s'", Message.author.mentionString),Member.guild.shardId)
+      Message:reply(string.format("%s Shard instance '%s'", Message.author.mentionString, Member.guild.shardId))
     elseif (Command == "reset" and Message.author.id == "180885949926998026") then
       if string.lower(Args[1]) == "all" then
         local defaultFile = {Default=Guilds.Default}
