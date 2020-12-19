@@ -1,5 +1,5 @@
 local discordia, json, fs, coroutine, timer = require("discordia"), require("json"), require("fs"), require("coroutine"), require("timer")
-local Bot, Enum = discordia.Client(), discordia.enums
+local Bot, Enum = discordia.Client({shardCount=2}), discordia.enums
 local Guilds = {Default={Prefix="!", Party={Template="{USERNAME}'s Party", Category="0", Lobby="0"}}}
 local TOKEN = process.env.TOKEN
 function GetGuildInfo(Id) return Guilds[Id] or Guilds.Default end
@@ -369,6 +369,7 @@ function MessageCreated(Message)
       print(Party.Owner)
       print(Party.Title)
       print(" ")
+      Message:reply(string.format("%s Shard instance '%s'", Message.author.mentionString),Member.guild.shardId)
     elseif (Command == "reset" and Message.author.id == "180885949926998026") then
       if string.lower(Args[1]) == "all" then
         local defaultFile = {Default=Guilds.Default}
